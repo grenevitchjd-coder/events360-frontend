@@ -129,6 +129,13 @@ export async function orgLogin(email, password) {
 const asUser = (path, options = {}) => request(path, options, USER_TOKEN_KEY, '/org/login')
 
 export const orgApi = {
+  // OAuth2 provider (Sign in with Events360, for downstream apps)
+  oauthAuthorize: (clientId, redirectUri, scope, state) =>
+    asUser('/oauth/authorize', {
+      method: 'POST',
+      body: JSON.stringify({ client_id: clientId, redirect_uri: redirectUri, scope, state }),
+    }),
+
   // Events
   listEvents: (orgId) => asUser(`/organizations/${orgId}/events`),
   createEvent: (orgId, payload) =>

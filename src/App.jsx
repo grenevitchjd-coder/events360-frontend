@@ -3,6 +3,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import OrgLogin from './pages/OrgLogin'
 import OrgDashboard from './pages/OrgDashboard'
+import OAuthAuthorize from './pages/OAuthAuthorize'
 
 function isAdminAuthenticated() {
   return !!localStorage.getItem('events360_admin_token')
@@ -47,6 +48,9 @@ export default function App() {
             </RequireOrgAuth>
           }
         />
+
+        {/* OAuth2 provider — "Sign in with Events360" for downstream apps */}
+        <Route path="/oauth/authorize" element={<OAuthAuthorize />} />
       </Routes>
     </BrowserRouter>
   )

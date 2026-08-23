@@ -15,6 +15,21 @@ export default function OrgLogin() {
     setLoading(true)
     try {
       await orgLogin(email, password)
+
+      const pendingRaw = sessionStorage.getItem('events360_pending_oauth')
+      if (pendingRaw) {
+        sessionStorage.removeItem('events360_pending_oauth')
+        const pending = JSON.parse(pendingRaw)
+        const params = new URLSearchParams({
+          client_id: pending.clientId,
+          redirect_uri: pending.redirectUri,
+        })
+        if (pending.scope) params.set('scope', pending.scope)
+        if (pending.state) params.set('state', pending.state)
+        navigate('/oauth/authorize?' + params.toString())
+        return
+      }
+
       navigate('/org')
     } catch (err) {
       setError(err.message)
