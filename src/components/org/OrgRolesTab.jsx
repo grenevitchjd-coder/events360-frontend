@@ -1,5 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { orgApi, getCurrentOrgUserClaims } from '../../api'
+
+function groupByCategory(catalog) {
+  const groups = {}
+  for (const perm of catalog) {
+    if (!groups[perm.category]) groups[perm.category] = []
+    groups[perm.category].push(perm)
+  }
+  return groups
+}
 
 export default function OrgRolesTab({ onToast }) {
   const orgId = getCurrentOrgUserClaims()?.org_id
@@ -23,6 +32,8 @@ export default function OrgRolesTab({ onToast }) {
       .then(setCatalog)
       .catch((e) => onToast(e.message, true))
   }, [orgId])
+
+  const groupedCatalog = useMemo(() => (catalog ? groupByCategory(catalog) : {}), [catalog])
 
   const togglePermission = (key) => {
     setSelectedKeys((prev) => {
@@ -70,28 +81,31 @@ export default function OrgRolesTab({ onToast }) {
 
           <div className="field">
             <label>Permissions</label>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {catalog.map((perm) => (
-                <label
-                  key={perm.key}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5 }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedKeys.has(perm.key)}
-                    onChange={() => togglePermission(perm.key)}
-                  />
-                  <span>
-                    <strong style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5 }}>{perm.key}</strong>
-                    {' — '}
-                    {perm.description}
-                  </span>
-                </label>
+            <div className="permission-groups">
+              {Object.entries(groupedCatalog).map(([category, perms]) => (
+                <div key={category}>
+                  <div className="permission-group-title">{category}</div>
+                  <div className="permission-list">
+                    {perms.map((perm) => (
+                      <label key={perm.key} className="permission-item">
+                        <input
+                          type="checkbox"
+                          checked={selectedKeys.has(perm.key)}
+                          onChange={() => togglePermission(perm.key)}
+                        />
+                        <span className="permission-item-text">
+                          <span className="permission-item-key">{perm.key}</span>
+                          <span className="permission-item-desc">{perm.description}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
 
-          <button className="btn btn-secondary" type="submit" disabled={creating}>
+          <button className="btn btn-secondary" type="submit" disabled={creating} style={{ marginTop: 20 }}>
             Create role
           </button>
         </form>
