@@ -85,6 +85,14 @@ export const api = {
   unlockOrg: (orgId) => request(`/admin/organizations/${orgId}/unlock`, { method: 'POST' }),
   deleteOrg: (orgId) => request(`/admin/organizations/${orgId}`, { method: 'DELETE' }),
 
+  listOrgEvents: (orgId) => request(`/admin/organizations/${orgId}/events`),
+  lockEvent: (orgId, eventId) =>
+    request(`/admin/organizations/${orgId}/events/${eventId}/lock`, { method: 'POST' }),
+  unlockEvent: (orgId, eventId) =>
+    request(`/admin/organizations/${orgId}/events/${eventId}/unlock`, { method: 'POST' }),
+  deleteEvent: (orgId, eventId) =>
+    request(`/admin/organizations/${orgId}/events/${eventId}`, { method: 'DELETE' }),
+
   listPlatformAdmins: () => request('/admin/platform-admins'),
   createPlatformAdmin: (payload) =>
     request('/admin/platform-admins', { method: 'POST', body: JSON.stringify(payload) }),
