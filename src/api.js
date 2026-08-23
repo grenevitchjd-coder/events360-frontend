@@ -1,15 +1,24 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-function getToken() {
-  return localStorage.getItem('events360_admin_token')
+const ADMIN_TOKEN_KEY = 'events360_admin_token'
+const USER_TOKEN_KEY = 'events360_user_token'
+
+function getStoredToken(key) {
+  return localStorage.getItem(key)
 }
 
 export function setToken(token) {
-  localStorage.setItem('events360_admin_token', token)
+  localStorage.setItem(ADMIN_TOKEN_KEY, token)
+}
+export function clearToken() {
+  localStorage.removeItem(ADMIN_TOKEN_KEY)
 }
 
-export function clearToken() {
-  localStorage.removeItem('events360_admin_token')
+export function setUserToken(token) {
+  localStorage.setItem(USER_TOKEN_KEY, token)
+}
+export function clearUserToken() {
+  localStorage.removeItem(USER_TOKEN_KEY)
 }
 
 export function decodeToken(token) {
@@ -23,13 +32,17 @@ export function decodeToken(token) {
 }
 
 export function getCurrentAdminClaims() {
-  const token = getToken()
-  if (!token) return null
-  return decodeToken(token)
+  const token = getStoredToken(ADMIN_TOKEN_KEY)
+  return token ? decodeToken(token) : null
 }
 
-async function request(path, options = {}) {
-  const token = getToken()
+export function getCurrentOrgUserClaims() {
+  const token = getStoredToken(USER_TOKEN_KEY)
+  return token ? decodeToken(token) : null
+}
+
+async function request(path, options = {}, tokenKey = ADMIN_TOKEN_KEY, unauthorizedRedirect = '/login') {
+  const token = getStoredToken(tokenKey)
   const headers = { ...(options.headers || {}) }
   if (token) headers['Authorization'] = `Bearer ${token}`
   if (options.body && !(options.body instanceof URLSearchParams)) {
@@ -39,8 +52,8 @@ async function request(path, options = {}) {
   const res = await fetch(`${API_URL}${path}`, { ...options, headers })
 
   if (res.status === 401) {
-    clearToken()
-    window.location.href = '/login'
+    localStorage.removeItem(tokenKey)
+    window.location.href = unauthorizedRedirect
     throw new Error('Session expired')
   }
 
@@ -58,6 +71,8 @@ async function request(path, options = {}) {
   if (res.status === 204) return null
   return res.json()
 }
+
+// ---------- Platform admin (Tito) ----------
 
 export async function login(email, password) {
   const body = new URLSearchParams()
@@ -98,4 +113,54 @@ export const api = {
     request('/admin/platform-admins', { method: 'POST', body: JSON.stringify(payload) }),
   disablePlatformAdmin: (id) => request(`/admin/platform-admins/${id}/disable`, { method: 'POST' }),
   enablePlatformAdmin: (id) => request(`/admin/platform-admins/${id}/enable`, { method: 'POST' }),
+}
+
+// ---------- Org users (owner/admin/staff) ----------
+
+export async function orgLogin(email, password) {
+  const body = new URLSearchParams()
+  body.set('username', email)
+  body.set('password', password)
+  const data = await request('/auth/login', { method: 'POST', body }, USER_TOKEN_KEY, '/org/login')
+  setUserToken(data.access_token)
+  return data
+}
+
+const asUser = (path, options = {}) => request(path, options, USER_TOKEN_KEY, '/org/login')
+
+export const orgApi = {
+  // Events
+  listEvents: (orgId) => asUser(`/organizations/${orgId}/events`),
+  createEvent: (orgId, payload) =>
+    asUser(`/organizations/${orgId}/events`, { method: 'POST', body: JSON.stringify(payload) }),
+  deleteEvent: (orgId, eventId) =>
+    asUser(`/organizations/${orgId}/events/${eventId}`, { method: 'DELETE' }),
+  updateEventRetention: (orgId, eventId, retentionDays) =>
+    asUser(`/organizations/${orgId}/events/${eventId}/retention`, {
+      method: 'PATCH',
+      body: JSON.stringify({ retention_days: retentionDays }),
+    }),
+
+  // Roles / permissions
+  listPermissionCatalog: () => asUser('/permissions'),
+  listRoles: (orgId) => asUser(`/organizations/${orgId}/roles`),
+  createRole: (orgId, payload) =>
+    asUser(`/organizations/${orgId}/roles`, { method: 'POST', body: JSON.stringify(payload) }),
+
+  // People
+  listUsers: (orgId) => asUser(`/organizations/${orgId}/users`),
+  createUser: (orgId, payload) =>
+    asUser(`/organizations/${orgId}/users`, { method: 'POST', body: JSON.stringify(payload) }),
+  reactivateUser: (orgId, userId) =>
+    asUser(`/organizations/${orgId}/users/${userId}/reactivate`, { method: 'POST' }),
+
+  // Staff assignments
+  listStaffAssignments: (orgId) => asUser(`/organizations/${orgId}/staff-assignments`),
+  createStaffAssignment: (orgId, payload) =>
+    asUser(`/organizations/${orgId}/staff-assignments`, { method: 'POST', body: JSON.stringify(payload) }),
+  deleteStaffAssignment: (orgId, assignmentId) =>
+    asUser(`/organizations/${orgId}/staff-assignments/${assignmentId}`, { method: 'DELETE' }),
+
+  // Org itself
+  deleteOrg: (orgId) => asUser(`/organizations/${orgId}`, { method: 'DELETE' }),
 }
