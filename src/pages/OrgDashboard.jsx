@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { clearUserToken, getCurrentOrgUserClaims } from '../api'
+import OrgAppsTab from '../components/org/OrgAppsTab'
 import OrgEventsTab from '../components/org/OrgEventsTab'
 import OrgStaffTab from '../components/org/OrgStaffTab'
 import OrgRolesTab from '../components/org/OrgRolesTab'
 import OrgSettingsTab from '../components/org/OrgSettingsTab'
 
 const TABS = [
+  { key: 'apps', label: 'Apps' },
   { key: 'events', label: 'Events' },
   { key: 'staff', label: 'Staff' },
   { key: 'roles', label: 'Roles' },
@@ -14,7 +16,7 @@ const TABS = [
 ]
 
 export default function OrgDashboard() {
-  const [tab, setTab] = useState('events')
+  const [tab, setTab] = useState('apps')
   const [toast, setToast] = useState(null)
   const navigate = useNavigate()
   const claims = getCurrentOrgUserClaims()
@@ -57,6 +59,7 @@ export default function OrgDashboard() {
       </aside>
 
       <main className="main">
+        {tab === 'apps' && <OrgAppsTab onToast={showToast} />}
         {tab === 'events' && <OrgEventsTab onToast={showToast} />}
         {tab === 'staff' && <OrgStaffTab onToast={showToast} />}
         {tab === 'roles' && <OrgRolesTab onToast={showToast} />}

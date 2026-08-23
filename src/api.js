@@ -86,6 +86,11 @@ export async function login(email, password) {
 export const api = {
   listPendingOrgs: () => request('/admin/organizations/pending'),
   listAllOrgs: () => request('/admin/organizations'),
+  listOrgEntitlements: (orgId) => request(`/admin/organizations/${orgId}/entitlements`),
+  enableEntitlement: (orgId, productKey) =>
+    request(`/admin/organizations/${orgId}/entitlements/${productKey}/enable`, { method: 'POST' }),
+  disableEntitlement: (orgId, productKey) =>
+    request(`/admin/organizations/${orgId}/entitlements/${productKey}/disable`, { method: 'POST' }),
   approveOrg: (orgId, notes) =>
     request(`/admin/organizations/${orgId}/approve`, {
       method: 'POST',
@@ -129,6 +134,8 @@ export async function orgLogin(email, password) {
 const asUser = (path, options = {}) => request(path, options, USER_TOKEN_KEY, '/org/login')
 
 export const orgApi = {
+  // Entitlements (which product apps this org can launch)
+  listEntitlements: () => asUser('/entitlements'),
   // OAuth2 provider (Sign in with Events360, for downstream apps)
   oauthAuthorize: (clientId, redirectUri, scope, state) =>
     asUser('/oauth/authorize', {

@@ -2,6 +2,55 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import StatusPill from './StatusPill'
 
+function ProductsPanel({ org, onToast }) {
+  const [entitlements, setEntitlements] = useState(null)
+  const [busyKey, setBusyKey] = useState(null)
+
+  const load = () => {
+    api
+      .listOrgEntitlements(org.id)
+      .then(setEntitlements)
+      .catch((e) => onToast(e.message, true))
+  }
+
+  useEffect(load, [org.id])
+
+  const toggle = async (ent) => {
+    setBusyKey(ent.product_key)
+    try {
+      if (ent.enabled) {
+        await api.disableEntitlement(org.id, ent.product_key)
+        onToast(`${ent.name} disabled for ${org.name}`)
+      } else {
+        await api.enableEntitlement(org.id, ent.product_key)
+        onToast(`${ent.name} enabled for ${org.name}`)
+      }
+      load()
+    } catch (e) {
+      onToast(e.message, true)
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
+  if (entitlements === null) return <div className="events-panel-empty">Loading products…</div>
+
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+      {entitlements.map((ent) => (
+        <button
+          key={ent.product_key}
+          className={ent.enabled ? 'btn btn-secondary btn-sm' : 'btn btn-danger btn-sm'}
+          disabled={busyKey === ent.product_key}
+          onClick={() => toggle(ent)}
+        >
+          {ent.name}: {ent.enabled ? 'Enabled' : 'Disabled'} — tap to {ent.enabled ? 'disable' : 'enable'}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function EventsPanel({ org, onToast }) {
   const [events, setEvents] = useState(null)
   const [busyId, setBusyId] = useState(null)
@@ -241,6 +290,7 @@ export default function Organizations({ onToast }) {
                     <tr className="events-panel-row">
                       <td colSpan={6}>
                         <div className="events-panel">
+                          <ProductsPanel org={org} onToast={onToast} />
                           <EventsPanel org={org} onToast={onToast} />
                         </div>
                       </td>
