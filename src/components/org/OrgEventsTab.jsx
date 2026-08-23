@@ -2,12 +2,20 @@ import { useEffect, useState } from 'react'
 import { orgApi, getCurrentOrgUserClaims } from '../../api'
 import StatusPill from '../StatusPill'
 
+function formatDateRange(startDate, endDate) {
+  if (!startDate) return '—'
+  const start = new Date(startDate).toLocaleDateString()
+  if (!endDate) return start
+  const end = new Date(endDate).toLocaleDateString()
+  return start === end ? start : `${start} – ${end}`
+}
+
 export default function OrgEventsTab({ onToast }) {
   const orgId = getCurrentOrgUserClaims()?.org_id
   const [events, setEvents] = useState(null)
   const [busyId, setBusyId] = useState(null)
   const [retentionDrafts, setRetentionDrafts] = useState({})
-  const [form, setForm] = useState({ name: '', event_date: '' })
+  const [form, setForm] = useState({ name: '', start_date: '', end_date: '' })
   const [creating, setCreating] = useState(false)
 
   const load = () => {
@@ -24,14 +32,19 @@ export default function OrgEventsTab({ onToast }) {
 
   const handleCreate = async (e) => {
     e.preventDefault()
+    if (form.end_date && form.start_date && form.end_date < form.start_date) {
+      onToast('End date cannot be before start date.', true)
+      return
+    }
     setCreating(true)
     try {
       await orgApi.createEvent(orgId, {
         name: form.name,
-        event_date: form.event_date ? new Date(form.event_date).toISOString() : null,
+        start_date: form.start_date ? new Date(form.start_date).toISOString() : null,
+        end_date: form.end_date ? new Date(form.end_date).toISOString() : null,
       })
       onToast(`${form.name} created`)
-      setForm({ name: '', event_date: '' })
+      setForm({ name: '', start_date: '', end_date: '' })
       load()
     } catch (err) {
       onToast(err.message, true)
@@ -76,7 +89,7 @@ export default function OrgEventsTab({ onToast }) {
   return (
     <>
       <div className="page-title">Events</div>
-      <p className="page-subtitle">Create and manage your organization's events.</p>
+      <p className="page-subtitle">Create and manage your organization's events. Leave end date blank for a single-day event.</p>
 
       <div className="panel">
         <div className="panel-title">Create an event</div>
@@ -91,12 +104,21 @@ export default function OrgEventsTab({ onToast }) {
             />
           </div>
           <div className="field">
-            <label htmlFor="ev-date">Date (optional)</label>
+            <label htmlFor="ev-start">Start date</label>
             <input
-              id="ev-date"
+              id="ev-start"
               type="date"
-              value={form.event_date}
-              onChange={(e) => setForm({ ...form, event_date: e.target.value })}
+              value={form.start_date}
+              onChange={(e) => setForm({ ...form, start_date: e.target.value })}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="ev-end">End date (optional)</label>
+            <input
+              id="ev-end"
+              type="date"
+              value={form.end_date}
+              onChange={(e) => setForm({ ...form, end_date: e.target.value })}
             />
           </div>
           <button className="btn btn-secondary" type="submit" disabled={creating}>
@@ -114,7 +136,7 @@ export default function OrgEventsTab({ onToast }) {
           <thead>
             <tr>
               <th>Event</th>
-              <th>Date</th>
+              <th>Dates</th>
               <th>Status</th>
               <th>Retention (days)</th>
               <th></th>
@@ -124,9 +146,7 @@ export default function OrgEventsTab({ onToast }) {
             {events.map((event) => (
               <tr key={event.id}>
                 <td>{event.name}</td>
-                <td className="mono">
-                  {event.event_date ? new Date(event.event_date).toLocaleDateString() : '—'}
-                </td>
+                <td className="mono">{formatDateRange(event.start_date, event.end_date)}</td>
                 <td>
                   <StatusPill status={event.status} />
                 </td>

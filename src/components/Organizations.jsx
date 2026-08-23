@@ -54,7 +54,14 @@ function EventsPanel({ org, onToast }) {
         {events.map((event) => (
           <tr key={event.id}>
             <td>{event.name}</td>
-            <td className="mono">{event.event_date ? new Date(event.event_date).toLocaleDateString() : '—'}</td>
+            <td className="mono">
+              {event.start_date
+                ? new Date(event.start_date).toLocaleDateString() +
+                  (event.end_date && event.end_date !== event.start_date
+                    ? ` - ${new Date(event.end_date).toLocaleDateString()}`
+                    : '')
+                : '-'}
+            </td>
             <td className="mono">{event.retention_days}d</td>
             <td>
               <StatusPill status={event.status} />
