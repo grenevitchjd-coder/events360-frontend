@@ -183,6 +183,10 @@ export const orgApi = {
     asUser(`/organizations/${orgId}/users/${userId}/reactivate`, { method: 'POST' }),
   sendUserReset: (orgId, userId) =>
     asUser(`/organizations/${orgId}/users/${userId}/send-password-reset`, { method: 'POST' }),
+  deactivateUser: (orgId, userId) =>
+    asUser(`/organizations/${orgId}/users/${userId}/deactivate`, { method: 'POST' }),
+  deleteUser: (orgId, userId) =>
+    asUser(`/organizations/${orgId}/users/${userId}`, { method: 'DELETE' }),
 
   // Staff assignments
   listStaffAssignments: (orgId) => asUser(`/organizations/${orgId}/staff-assignments`),

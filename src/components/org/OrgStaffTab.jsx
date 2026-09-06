@@ -61,6 +61,40 @@ export default function OrgStaffTab({ onToast }) {
       .finally(() => setBusyId(null))
   }
 
+  const myId = getCurrentOrgUserClaims()?.sub
+
+  // Mirror of the server's guards, so buttons users can't use don't render:
+  // never yourself, never the owner, and admins are owner-only targets.
+  const canActOn = (user) =>
+    user.id !== myId &&
+    user.role !== 'org_owner' &&
+    (user.role !== 'org_admin' || isOwner)
+
+  const handleDeactivate = (user) => {
+    setBusyId(user.id)
+    orgApi
+      .deactivateUser(orgId, user.id)
+      .then(() => {
+        onToast(`${user.name} deactivated — they can no longer sign in`)
+        loadAll()
+      })
+      .catch((e) => onToast(e.message, true))
+      .finally(() => setBusyId(null))
+  }
+
+  const handleDelete = (user) => {
+    if (!window.confirm(`Remove ${user.name} from the organization? Their role assignments go with them. This can't be undone.`)) return
+    setBusyId(user.id)
+    orgApi
+      .deleteUser(orgId, user.id)
+      .then(() => {
+        onToast(`${user.name} removed from the organization`)
+        loadAll()
+      })
+      .catch((e) => onToast(e.message, true))
+      .finally(() => setBusyId(null))
+  }
+
   const handleReactivate = (user) => {
     setBusyId(user.id)
     orgApi
@@ -208,6 +242,24 @@ export default function OrgStaffTab({ onToast }) {
                     onClick={() => handleReactivate(user)}
                   >
                     Reactivate
+                  </button>
+                )}
+                {user.status === 'active' && canActOn(user) && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    disabled={busyId === user.id}
+                    onClick={() => handleDeactivate(user)}
+                  >
+                    Deactivate
+                  </button>
+                )}
+                {canActOn(user) && (
+                  <button
+                    className="btn btn-danger btn-sm"
+                    disabled={busyId === user.id}
+                    onClick={() => handleDelete(user)}
+                  >
+                    Remove
                   </button>
                 )}
               </td>
