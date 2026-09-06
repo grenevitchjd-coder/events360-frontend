@@ -14,9 +14,6 @@ export default function OrgStaffTab({ onToast }) {
   const [busyId, setBusyId] = useState(null)
 
   const [userForm, setUserForm] = useState({ name: '', email: '', role: 'staff' })
-  // { [appCategory]: { role_id, event_id } } — one optional role per app at
-  // creation time; more can be stacked later via Assign roles below.
-  const [createPicks, setCreatePicks] = useState({})
   const [creatingUser, setCreatingUser] = useState(false)
 
   const [assignUserId, setAssignUserId] = useState('')
@@ -80,13 +77,7 @@ export default function OrgStaffTab({ onToast }) {
     setCreatingUser(true)
     try {
       const created = await orgApi.createUser(orgId, userForm)
-      const { ok, chosen } = await createPickedAssignments(created.id, createPicks)
-      onToast(
-        chosen > 0
-          ? `${created.name} added with ${ok}/${chosen} role${chosen === 1 ? '' : 's'} — invite email sent so they can set their password`
-          : `${created.name} added — invite email sent so they can set their password`
-      )
-      setCreatePicks({})
+      onToast(`${created.name} added — invite email sent so they can set their password. Give them roles below.`)
       onToast(`${userForm.name} added`)
       setUserForm({ name: '', email: '', role: 'staff' })
       loadAll()
@@ -212,6 +203,32 @@ export default function OrgStaffTab({ onToast }) {
       </div>
     ))
 
+  // Inline editing of an assignment (role and/or scope) — Edit turns the
+  // row's Role and Scope cells into dropdowns; Save patches in place.
+  const [editingAsgId, setEditingAsgId] = useState(null)
+  const [editAsg, setEditAsg] = useState({ role_id: '', event_id: '' })
+
+  const startEditAssignment = (a) => {
+    setEditingAsgId(a.id)
+    setEditAsg({ role_id: a.role_id, event_id: a.event_id || '' })
+  }
+
+  const handleSaveAssignment = (a) => {
+    setBusyId(a.id)
+    orgApi
+      .updateStaffAssignment(orgId, a.id, {
+        role_id: editAsg.role_id,
+        event_id: editAsg.event_id || null,
+      })
+      .then(() => {
+        onToast('Assignment updated')
+        setEditingAsgId(null)
+        loadAll()
+      })
+      .catch((e) => onToast(e.message, true))
+      .finally(() => setBusyId(null))
+  }
+
   const handleRemoveAssignment = (assignment) => {
     setBusyId(assignment.id)
     orgApi
@@ -278,14 +295,13 @@ export default function OrgStaffTab({ onToast }) {
               {isOwner && <option value="org_admin">Org admin</option>}
             </select>
           </div>
-          {renderAppPicks(createPicks, setCreatePicks, 'u')}
           <button className="btn btn-secondary" type="submit" disabled={creatingUser}>
             Add person
           </button>
         </form>
         <p className="page-subtitle" style={{ marginTop: 8, marginBottom: 0 }}>
           No password to type: they&apos;ll get an invite email with a link to set their own.
-          Roles are optional here — you can stack more anytime below.
+          Then give them access in Assign roles below.
         </p>
       </div>
 
@@ -392,22 +408,80 @@ export default function OrgStaffTab({ onToast }) {
             </tr>
           </thead>
           <tbody>
-            {assignments.map((a) => (
-              <tr key={a.id}>
-                <td>{userName(a.user_id)}</td>
-                <td>{roleName(a.role_id)}</td>
-                <td className="mono">{a.event_id ? eventName(a.event_id) : 'Org-wide'}</td>
-                <td className="actions-cell">
-                  <button
-                    className="btn btn-danger btn-sm"
-                    disabled={busyId === a.id}
-                    onClick={() => handleRemoveAssignment(a)}
-                  >
-                    Remove
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {assignments.map((a) =>
+              editingAsgId === a.id ? (
+                <tr key={a.id}>
+                  <td>{userName(a.user_id)}</td>
+                  <td>
+                    <select
+                      aria-label="Edit role"
+                      value={editAsg.role_id}
+                      onChange={(e) => setEditAsg({ ...editAsg, role_id: e.target.value })}
+                      style={selectStyle}
+                    >
+                      {roles.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <select
+                      aria-label="Edit scope"
+                      value={editAsg.event_id}
+                      onChange={(e) => setEditAsg({ ...editAsg, event_id: e.target.value })}
+                      style={selectStyle}
+                    >
+                      <option value="">Org-wide</option>
+                      {events.map((ev) => (
+                        <option key={ev.id} value={ev.id}>
+                          {ev.name} only
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="actions-cell">
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      disabled={busyId === a.id}
+                      onClick={() => handleSaveAssignment(a)}
+                    >
+                      Save
+                    </button>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      disabled={busyId === a.id}
+                      onClick={() => setEditingAsgId(null)}
+                    >
+                      Cancel
+                    </button>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={a.id}>
+                  <td>{userName(a.user_id)}</td>
+                  <td>{roleName(a.role_id)}</td>
+                  <td className="mono">{a.event_id ? eventName(a.event_id) : 'Org-wide'}</td>
+                  <td className="actions-cell">
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      disabled={busyId === a.id}
+                      onClick={() => startEditAssignment(a)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="btn btn-danger btn-sm"
+                      disabled={busyId === a.id}
+                      onClick={() => handleRemoveAssignment(a)}
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              )
+            )}
           </tbody>
         </table>
       )}

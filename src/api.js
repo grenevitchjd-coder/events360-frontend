@@ -194,6 +194,11 @@ export const orgApi = {
   listStaffAssignments: (orgId) => asUser(`/organizations/${orgId}/staff-assignments`),
   createStaffAssignment: (orgId, payload) =>
     asUser(`/organizations/${orgId}/staff-assignments`, { method: 'POST', body: JSON.stringify(payload) }),
+  updateStaffAssignment: (orgId, assignmentId, body) =>
+    asUser(`/organizations/${orgId}/staff-assignments/${assignmentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
   deleteStaffAssignment: (orgId, assignmentId) =>
     asUser(`/organizations/${orgId}/staff-assignments/${assignmentId}`, { method: 'DELETE' }),
 
