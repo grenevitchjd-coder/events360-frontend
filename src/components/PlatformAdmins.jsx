@@ -1,3 +1,4 @@
+// events360-frontend/src/components/PlatformAdmins.jsx
 import { useEffect, useState } from 'react'
 import { api, getCurrentAdminClaims } from '../api'
 import StatusPill from './StatusPill'
@@ -33,6 +34,18 @@ export default function PlatformAdmins({ onToast }) {
       onToast(err.message, true)
     } finally {
       setCreating(false)
+    }
+  }
+
+  const sendReset = async (admin) => {
+    setBusyId(admin.id)
+    try {
+      const res = await api.sendPlatformAdminReset(admin.id)
+      onToast(res.detail)
+    } catch (e) {
+      onToast(e.message, true)
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -140,6 +153,15 @@ export default function PlatformAdmins({ onToast }) {
                 <StatusPill status={admin.status} />
               </td>
               <td className="actions-cell">
+                {isSuperadmin && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    disabled={busyId === admin.id}
+                    onClick={() => sendReset(admin)}
+                  >
+                    Send reset link
+                  </button>
+                )}
                 {isSuperadmin && admin.id !== myId && (
                   <button
                     className={admin.status === 'active' ? 'btn btn-danger btn-sm' : 'btn btn-secondary btn-sm'}

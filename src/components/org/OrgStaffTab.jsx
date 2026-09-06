@@ -1,3 +1,4 @@
+// events360-frontend/src/components/org/OrgStaffTab.jsx
 import { useEffect, useState } from 'react'
 import { orgApi, getCurrentOrgUserClaims } from '../../api'
 import StatusPill from '../StatusPill'
@@ -49,6 +50,15 @@ export default function OrgStaffTab({ onToast }) {
     } finally {
       setCreatingUser(false)
     }
+  }
+
+  const handleSendReset = (user) => {
+    setBusyId(user.id)
+    orgApi
+      .sendUserReset(orgId, user.id)
+      .then((res) => onToast(res.detail))
+      .catch((e) => onToast(e.message, true))
+      .finally(() => setBusyId(null))
   }
 
   const handleReactivate = (user) => {
@@ -184,6 +194,13 @@ export default function OrgStaffTab({ onToast }) {
                 <StatusPill status={user.status} />
               </td>
               <td className="actions-cell">
+                <button
+                  className="btn btn-secondary btn-sm"
+                  disabled={busyId === user.id}
+                  onClick={() => handleSendReset(user)}
+                >
+                  Send reset link
+                </button>
                 {user.status === 'inactive' && (
                   <button
                     className="btn btn-secondary btn-sm"

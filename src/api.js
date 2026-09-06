@@ -1,3 +1,4 @@
+// events360-frontend/src/api.js
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 const ADMIN_TOKEN_KEY = 'events360_admin_token'
@@ -113,11 +114,17 @@ export const api = {
   deleteEvent: (orgId, eventId) =>
     request(`/admin/organizations/${orgId}/events/${eventId}`, { method: 'DELETE' }),
 
+  listOrgUsers: (orgId) => request(`/admin/organizations/${orgId}/users`),
+  sendOrgUserReset: (orgId, userId) =>
+    request(`/admin/organizations/${orgId}/users/${userId}/send-password-reset`, { method: 'POST' }),
+
   listPlatformAdmins: () => request('/admin/platform-admins'),
   createPlatformAdmin: (payload) =>
     request('/admin/platform-admins', { method: 'POST', body: JSON.stringify(payload) }),
   disablePlatformAdmin: (id) => request(`/admin/platform-admins/${id}/disable`, { method: 'POST' }),
   enablePlatformAdmin: (id) => request(`/admin/platform-admins/${id}/enable`, { method: 'POST' }),
+  sendPlatformAdminReset: (id) =>
+    request(`/admin/platform-admins/${id}/send-password-reset`, { method: 'POST' }),
 }
 
 // ---------- Org users (owner/admin/staff) ----------
@@ -167,6 +174,8 @@ export const orgApi = {
     asUser(`/organizations/${orgId}/users`, { method: 'POST', body: JSON.stringify(payload) }),
   reactivateUser: (orgId, userId) =>
     asUser(`/organizations/${orgId}/users/${userId}/reactivate`, { method: 'POST' }),
+  sendUserReset: (orgId, userId) =>
+    asUser(`/organizations/${orgId}/users/${userId}/send-password-reset`, { method: 'POST' }),
 
   // Staff assignments
   listStaffAssignments: (orgId) => asUser(`/organizations/${orgId}/staff-assignments`),
@@ -177,4 +186,36 @@ export const orgApi = {
 
   // Org itself
   deleteOrg: (orgId) => asUser(`/organizations/${orgId}`, { method: 'DELETE' }),
+}
+
+// ---------- Public (no auth): finish a password reset ----------
+
+export async function resetPassword(token, newPassword) {
+  const res = await fetch(`${API_URL}/auth/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, new_password: newPassword }),
+  })
+  let data = null
+  try {
+    data = await res.json()
+  } catch {
+    // ignore
+  }
+  if (!res.ok) {
+    let detail = `Request failed (${res.status})`
+    if (data?.detail) {
+      if (Array.isArray(data.detail)) {
+        // Pydantic validation errors (e.g. password policy) arrive as an array
+        detail = data.detail
+          .map((d) => (d.msg || '').replace(/^Value error, /, ''))
+          .filter(Boolean)
+          .join(' ')
+      } else {
+        detail = data.detail
+      }
+    }
+    throw new Error(detail)
+  }
+  return data
 }

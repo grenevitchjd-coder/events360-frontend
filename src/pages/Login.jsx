@@ -1,3 +1,4 @@
+// events360-frontend/src/pages/Login.jsx
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { login } from '../api'
@@ -68,6 +69,10 @@ export default function Login() {
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+
+        <p style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 16, marginBottom: 0 }}>
+          Locked out? Ask a superadmin to email you a password reset link.
+        </p>
       </div>
     </div>
   )

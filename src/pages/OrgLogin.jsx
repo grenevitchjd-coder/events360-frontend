@@ -1,3 +1,4 @@
+// events360-frontend/src/pages/OrgLogin.jsx
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { orgLogin } from '../api'
@@ -83,6 +84,10 @@ export default function OrgLogin() {
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+
+        <p style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 16, marginBottom: 0 }}>
+          Forgot your password? Ask your organization admin (or Events360 support) to email you a reset link.
+        </p>
       </div>
     </div>
   )
