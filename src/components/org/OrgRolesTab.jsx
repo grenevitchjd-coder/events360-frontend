@@ -14,16 +14,10 @@ const AREA_LABELS = {
   staff: 'Staff & assignments',
 }
 
-// Tab titles per catalog category. "Events360" is the org control plane —
-// grants there let staff run the org (people, events) WITHOUT the
-// org_admin implicit-everything, so an org manager never has to be given
-// app financials just to manage the team. Unknown categories (future
-// apps) fall back to "<Category> roles" automatically.
-const CATEGORY_TAB_LABELS = {
-  Events360: 'Org roles',
-  EventNXT: 'EventNXT roles',
-}
-const tabLabelFor = (category) => CATEGORY_TAB_LABELS[category] || `${category} roles`
+// The app whose roles this page manages arrives as a prop — the org
+// dashboard renders one SIDEBAR item per catalog category ("Org roles",
+// "EventNXT roles", ...), so each app's roles are their own page and new
+// apps never crowd a tab bar.
 
 // Starter roles: clicking one prefills the builder (name + permissions) so
 // the admin can see exactly what it grants, tweak it, and save. Manage keys
@@ -120,7 +114,7 @@ function summarize(role) {
     .join(' · ')
 }
 
-export default function OrgRolesTab({ onToast }) {
+export default function OrgRolesTab({ app, appLabel, onToast }) {
   const orgId = getCurrentOrgUserClaims()?.org_id
   const [roles, setRoles] = useState(null)
   const [catalog, setCatalog] = useState(null)
@@ -146,13 +140,7 @@ export default function OrgRolesTab({ onToast }) {
   }, [orgId])
 
   const structured = useMemo(() => (catalog ? structureCatalog(catalog) : {}), [catalog])
-  const categories = useMemo(() => {
-    const cats = Object.keys(structured)
-    // Org control plane first, then apps alphabetically
-    return cats.sort((a, b) => (a === 'Events360' ? -1 : b === 'Events360' ? 1 : a.localeCompare(b)))
-  }, [structured])
-  const [activeApp, setActiveApp] = useState(null)
-  const currentApp = activeApp && categories.includes(activeApp) ? activeApp : categories[0]
+  const currentApp = app
   const keyCategory = useMemo(
     () => Object.fromEntries((catalog || []).map((p) => [p.key, p.category])),
     [catalog]
@@ -191,10 +179,6 @@ export default function OrgRolesTab({ onToast }) {
   }
 
   const startEdit = (role) => {
-    if (!roleTouchesApp(role, currentApp)) {
-      const home = categories.find((c) => roleTouchesApp(role, c))
-      if (home) setActiveApp(home)
-    }
     setEditingRoleId(role.id)
     setName(role.name)
     setSelectedKeys(new Set(role.permissions.map((p) => p.key)))
@@ -260,28 +244,12 @@ export default function OrgRolesTab({ onToast }) {
 
   return (
     <>
-      <div className="page-title">Roles</div>
+      <div className="page-title">{appLabel}</div>
       <p className="page-subtitle">
-        A role is a bundle of access you assign to staff on the Staff tab — org-wide or for one
-        event. Owners and org admins always have full access; roles only apply to staff. Org roles
-        cover running the organization itself; each app's roles cover only that app.
+        {app === 'Events360'
+          ? 'Access to run the organization itself — people and events — without granting any app. Assign on the Staff tab; owners and org admins always have full access.'
+          : `A bundle of ${app} access you assign to staff on the Staff tab — org-wide or for one event. Owners and org admins always have full access; roles only apply to staff.`}
       </p>
-
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        {categories.map((cat) => (
-          <button
-            key={cat}
-            type="button"
-            className={`btn btn-sm ${currentApp === cat ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => {
-              setActiveApp(cat)
-              resetBuilder()
-            }}
-          >
-            {tabLabelFor(cat)}
-          </button>
-        ))}
-      </div>
 
       <div className="panel">
         <div className="panel-title">Start from a template</div>
@@ -387,7 +355,7 @@ export default function OrgRolesTab({ onToast }) {
 
       {roles.filter((r) => roleTouchesApp(r, currentApp)).length === 0 ? (
         <div className="data-table">
-          <div className="empty-state">No {tabLabelFor(currentApp).toLowerCase()} yet — start from a template above.</div>
+          <div className="empty-state">No {appLabel.toLowerCase()} yet — start from a template above.</div>
         </div>
       ) : (
         <table className="data-table">
