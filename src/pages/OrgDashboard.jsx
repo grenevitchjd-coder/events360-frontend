@@ -1,6 +1,7 @@
+// events360-frontend/src/pages/OrgDashboard.jsx
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { clearUserToken, getCurrentOrgUserClaims } from '../api'
+import { clearUserToken, getCurrentOrgUserClaims, orgApi } from '../api'
 import OrgAppsTab from '../components/org/OrgAppsTab'
 import OrgEventsTab from '../components/org/OrgEventsTab'
 import OrgStaffTab from '../components/org/OrgStaffTab'
@@ -18,8 +19,37 @@ const TABS = [
 export default function OrgDashboard() {
   const [tab, setTab] = useState('apps')
   const [toast, setToast] = useState(null)
+  const [me, setMe] = useState(null)
   const navigate = useNavigate()
   const claims = getCurrentOrgUserClaims()
+
+  useEffect(() => {
+    orgApi.getMe().then(setMe).catch(() => {})
+  }, [])
+
+  // Tab gating from /auth/me (same grants the backend enforces). Apps is
+  // always available; Events/Staff open to staff holding the events360
+  // area; Roles and Settings stay owner/admin-only (a role that edits
+  // roles could grant itself anything). A missing payload (loading, or an
+  // older backend) gates nothing.
+  const hasOrgArea = (area) => {
+    const perms = me?.permissions
+    if (!me || !perms || perms.all) return true
+    const all = [...(perms.org_wide || []), ...Object.values(perms.by_event || {}).flat()]
+    return all.some((k) => k.startsWith(`events360.${area}.`))
+  }
+  const tabAllowed = (key) => {
+    if (key === 'apps') return true
+    if (key === 'events') return hasOrgArea('events')
+    if (key === 'staff') return hasOrgArea('staff')
+    // roles + settings: owner/admin only
+    return !me || !me.permissions || me.permissions.all
+  }
+
+  useEffect(() => {
+    if (me && !tabAllowed(tab)) setTab('apps')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me, tab])
 
   useEffect(() => {
     if (!toast) return
@@ -45,6 +75,8 @@ export default function OrgDashboard() {
           <button
             key={t.key}
             className={`nav-item ${tab === t.key ? 'active' : ''}`}
+            disabled={!tabAllowed(t.key)}
+            title={tabAllowed(t.key) ? undefined : 'Your role doesn\u2019t include this'}
             onClick={() => setTab(t.key)}
           >
             {t.label}

@@ -10,19 +10,43 @@ const AREA_LABELS = {
   promotion: 'Promotion',
   money: 'Money',
   checkin: 'Check-in',
+  events: 'Events',
+  staff: 'Staff & assignments',
 }
+
+// Tab titles per catalog category. "Events360" is the org control plane —
+// grants there let staff run the org (people, events) WITHOUT the
+// org_admin implicit-everything, so an org manager never has to be given
+// app financials just to manage the team. Unknown categories (future
+// apps) fall back to "<Category> roles" automatically.
+const CATEGORY_TAB_LABELS = {
+  Events360: 'Org roles',
+  EventNXT: 'EventNXT roles',
+}
+const tabLabelFor = (category) => CATEGORY_TAB_LABELS[category] || `${category} roles`
 
 // Starter roles: clicking one prefills the builder (name + permissions) so
 // the admin can see exactly what it grants, tweak it, and save. Manage keys
 // bring their view keys along, matching the manage-implies-view rule.
 const TEMPLATES = [
   {
+    name: 'Org manager',
+    app: 'Events360',
+    blurb: 'Runs the org — people, assignments, events — with zero app financials.',
+    keys: [
+      'events360.staff.manage', 'events360.staff.view',
+      'events360.events.manage', 'events360.events.view',
+    ],
+  },
+  {
     name: 'Door staff',
+    app: 'EventNXT',
     blurb: 'Check people in and see the roster. Nothing else.',
     keys: ['eventnxt.checkin', 'eventnxt.guest_list.view'],
   },
   {
     name: 'Guest manager',
+    app: 'EventNXT',
     blurb: 'Runs invites, allotments, and the guest list. Sees setup, no money.',
     keys: [
       'eventnxt.guests.manage', 'eventnxt.guests.view',
@@ -32,11 +56,13 @@ const TEMPLATES = [
   },
   {
     name: 'Promoter',
+    app: 'EventNXT',
     blurb: 'Creates promo codes and referral deals. No sales figures.',
     keys: ['eventnxt.promotion.manage', 'eventnxt.promotion.view'],
   },
   {
     name: 'Finance',
+    app: 'EventNXT',
     blurb: 'Full money access — refunds, payouts, reserve — plus view of everything.',
     keys: [
       'eventnxt.money.manage', 'eventnxt.money.view',
@@ -46,6 +72,7 @@ const TEMPLATES = [
   },
   {
     name: 'Event coordinator',
+    app: 'EventNXT',
     blurb: 'Runs everything except acting on money (can see the numbers).',
     keys: [
       'eventnxt.setup.manage', 'eventnxt.setup.view',
@@ -119,6 +146,18 @@ export default function OrgRolesTab({ onToast }) {
   }, [orgId])
 
   const structured = useMemo(() => (catalog ? structureCatalog(catalog) : {}), [catalog])
+  const categories = useMemo(() => {
+    const cats = Object.keys(structured)
+    // Org control plane first, then apps alphabetically
+    return cats.sort((a, b) => (a === 'Events360' ? -1 : b === 'Events360' ? 1 : a.localeCompare(b)))
+  }, [structured])
+  const [activeApp, setActiveApp] = useState(null)
+  const currentApp = activeApp && categories.includes(activeApp) ? activeApp : categories[0]
+  const keyCategory = useMemo(
+    () => Object.fromEntries((catalog || []).map((p) => [p.key, p.category])),
+    [catalog]
+  )
+  const roleTouchesApp = (role, app) => role.permissions.some((p) => keyCategory[p.key] === app)
 
   const setChecked = (key, on) => {
     setSelectedKeys((prev) => {
@@ -152,6 +191,10 @@ export default function OrgRolesTab({ onToast }) {
   }
 
   const startEdit = (role) => {
+    if (!roleTouchesApp(role, currentApp)) {
+      const home = categories.find((c) => roleTouchesApp(role, c))
+      if (home) setActiveApp(home)
+    }
     setEditingRoleId(role.id)
     setName(role.name)
     setSelectedKeys(new Set(role.permissions.map((p) => p.key)))
@@ -171,7 +214,16 @@ export default function OrgRolesTab({ onToast }) {
     }
     setSaving(true)
     try {
-      const payload = { name, permission_keys: Array.from(selectedKeys) }
+      // Editing under one app tab must never silently strip grants the
+      // role holds in OTHER apps — carry those along untouched.
+      const keys = new Set(selectedKeys)
+      if (editingRoleId) {
+        const editing = roles.find((r) => r.id === editingRoleId)
+        for (const p of editing?.permissions || []) {
+          if (keyCategory[p.key] !== currentApp) keys.add(p.key)
+        }
+      }
+      const payload = { name, permission_keys: Array.from(keys) }
       if (editingRoleId) {
         await orgApi.updateRole(orgId, editingRoleId, payload)
         onToast(`Role "${name}" updated — everyone assigned it has the new access now`)
@@ -211,8 +263,25 @@ export default function OrgRolesTab({ onToast }) {
       <div className="page-title">Roles</div>
       <p className="page-subtitle">
         A role is a bundle of access you assign to staff on the Staff tab — org-wide or for one
-        event. Owners and org admins always have full access; roles only apply to staff.
+        event. Owners and org admins always have full access; roles only apply to staff. Org roles
+        cover running the organization itself; each app's roles cover only that app.
       </p>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        {categories.map((cat) => (
+          <button
+            key={cat}
+            type="button"
+            className={`btn btn-sm ${currentApp === cat ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => {
+              setActiveApp(cat)
+              resetBuilder()
+            }}
+          >
+            {tabLabelFor(cat)}
+          </button>
+        ))}
+      </div>
 
       <div className="panel">
         <div className="panel-title">Start from a template</div>
@@ -221,7 +290,7 @@ export default function OrgRolesTab({ onToast }) {
           before saving.
         </p>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {TEMPLATES.map((t) => (
+          {TEMPLATES.filter((t) => t.app === currentApp).map((t) => (
             <button
               key={t.name}
               type="button"
@@ -243,7 +312,7 @@ export default function OrgRolesTab({ onToast }) {
             <input id="role-name" required value={name} onChange={(e) => setName(e.target.value)} />
           </div>
 
-          {Object.entries(structured).map(([app, rows]) => (
+          {Object.entries(structured).filter(([app]) => app === currentApp).map(([app, rows]) => (
             <div key={app} style={{ marginTop: 12 }}>
               <div className="permission-group-title">{app}</div>
               <table className="data-table" style={{ marginBottom: 0 }}>
@@ -316,9 +385,9 @@ export default function OrgRolesTab({ onToast }) {
         </form>
       </div>
 
-      {roles.length === 0 ? (
+      {roles.filter((r) => roleTouchesApp(r, currentApp)).length === 0 ? (
         <div className="data-table">
-          <div className="empty-state">No roles yet — start from a template above.</div>
+          <div className="empty-state">No {tabLabelFor(currentApp).toLowerCase()} yet — start from a template above.</div>
         </div>
       ) : (
         <table className="data-table">
@@ -330,7 +399,7 @@ export default function OrgRolesTab({ onToast }) {
             </tr>
           </thead>
           <tbody>
-            {roles.map((role) => (
+            {roles.filter((r) => roleTouchesApp(r, currentApp)).map((role) => (
               <tr key={role.id}>
                 <td>{role.name}</td>
                 <td style={{ fontSize: 13 }}>{summarize(role) || '—'}</td>

@@ -142,6 +142,8 @@ export async function orgLogin(email, password) {
 const asUser = (path, options = {}) => request(path, options, USER_TOKEN_KEY, '/org/login')
 
 export const orgApi = {
+  // Who am I + my events360.* grants (drives org-dashboard tab gating)
+  getMe: () => asUser('/auth/me'),
   // Entitlements (which product apps this org can launch)
   listEntitlements: () => asUser('/entitlements'),
   // OAuth2 provider (Sign in with Events360, for downstream apps)
