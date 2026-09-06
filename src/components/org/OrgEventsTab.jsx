@@ -1,3 +1,4 @@
+// events360-frontend/src/components/org/OrgEventsTab.jsx
 import { useEffect, useState } from 'react'
 import { orgApi, getCurrentOrgUserClaims } from '../../api'
 import StatusPill from '../StatusPill'
@@ -17,6 +18,9 @@ export default function OrgEventsTab({ onToast }) {
   const [retentionDrafts, setRetentionDrafts] = useState({})
   const [form, setForm] = useState({ name: '', start_date: '', end_date: '' })
   const [creating, setCreating] = useState(false)
+  // Inline editing: which event row is in edit mode, and its draft values
+  const [editingId, setEditingId] = useState(null)
+  const [editDraft, setEditDraft] = useState({ name: '', start_date: '', end_date: '' })
 
   const load = () => {
     orgApi
@@ -50,6 +54,60 @@ export default function OrgEventsTab({ onToast }) {
       onToast(err.message, true)
     } finally {
       setCreating(false)
+    }
+  }
+
+  const isoToDateInput = (iso) => (iso ? iso.slice(0, 10) : '')
+
+  const startEdit = (event) => {
+    setEditingId(event.id)
+    setEditDraft({
+      name: event.name,
+      start_date: isoToDateInput(event.start_date),
+      end_date: isoToDateInput(event.end_date),
+    })
+  }
+
+  const cancelEdit = () => setEditingId(null)
+
+  const handleSaveEdit = async (event) => {
+    if (!editDraft.name.trim()) {
+      onToast('Event name cannot be empty.', true)
+      return
+    }
+    if (editDraft.end_date && editDraft.start_date && editDraft.end_date < editDraft.start_date) {
+      onToast('End date cannot be before start date.', true)
+      return
+    }
+    // Events360's dates are authoritative for ticketing apps (EventNXT) —
+    // changing them deserves a deliberate confirm, and honesty about what
+    // does NOT change downstream.
+    const datesChanged =
+      editDraft.start_date !== isoToDateInput(event.start_date) ||
+      editDraft.end_date !== isoToDateInput(event.end_date)
+    if (datesChanged) {
+      const okToChange = window.confirm(
+        `Change the dates for "${event.name}"?\n\n` +
+          'Ticketing apps like EventNXT treat these dates as authoritative — day-based ' +
+          'setups will follow the new dates, but any already-issued dated tickets keep ' +
+          'their original dates.'
+      )
+      if (!okToChange) return
+    }
+    setBusyId(event.id)
+    try {
+      await orgApi.updateEvent(orgId, event.id, {
+        name: editDraft.name.trim(),
+        start_date: editDraft.start_date ? new Date(editDraft.start_date).toISOString() : null,
+        end_date: editDraft.end_date ? new Date(editDraft.end_date).toISOString() : null,
+      })
+      onToast(`${editDraft.name.trim()} updated`)
+      setEditingId(null)
+      load()
+    } catch (e) {
+      onToast(e.message, true)
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -145,8 +203,63 @@ export default function OrgEventsTab({ onToast }) {
           <tbody>
             {events.map((event) => (
               <tr key={event.id}>
-                <td>{event.name}</td>
-                <td className="mono">{formatDateRange(event.start_date, event.end_date)}</td>
+                {editingId === event.id ? (
+                  <>
+                    <td>
+                      <input
+                        aria-label="Event name"
+                        value={editDraft.name}
+                        onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })}
+                        style={{
+                          width: '100%',
+                          background: 'var(--bg)',
+                          border: '1px solid var(--border)',
+                          borderRadius: '6px',
+                          padding: '6px 8px',
+                          color: 'var(--text)',
+                          fontSize: '13px',
+                        }}
+                      />
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <input
+                          aria-label="Start date"
+                          type="date"
+                          value={editDraft.start_date}
+                          onChange={(e) => setEditDraft({ ...editDraft, start_date: e.target.value })}
+                          style={{
+                            background: 'var(--bg)',
+                            border: '1px solid var(--border)',
+                            borderRadius: '6px',
+                            padding: '6px 8px',
+                            color: 'var(--text)',
+                            fontSize: '13px',
+                          }}
+                        />
+                        <input
+                          aria-label="End date"
+                          type="date"
+                          value={editDraft.end_date}
+                          onChange={(e) => setEditDraft({ ...editDraft, end_date: e.target.value })}
+                          style={{
+                            background: 'var(--bg)',
+                            border: '1px solid var(--border)',
+                            borderRadius: '6px',
+                            padding: '6px 8px',
+                            color: 'var(--text)',
+                            fontSize: '13px',
+                          }}
+                        />
+                      </div>
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td>{event.name}</td>
+                    <td className="mono">{formatDateRange(event.start_date, event.end_date)}</td>
+                  </>
+                )}
                 <td>
                   <StatusPill status={event.status} />
                 </td>
@@ -180,13 +293,41 @@ export default function OrgEventsTab({ onToast }) {
                   </div>
                 </td>
                 <td className="actions-cell">
-                  <button
-                    className="btn btn-danger btn-sm"
-                    disabled={busyId === event.id}
-                    onClick={() => handleDelete(event)}
-                  >
-                    Delete
-                  </button>
+                  {editingId === event.id ? (
+                    <>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        disabled={busyId === event.id}
+                        onClick={() => handleSaveEdit(event)}
+                      >
+                        Save changes
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        disabled={busyId === event.id}
+                        onClick={cancelEdit}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        disabled={busyId === event.id}
+                        onClick={() => startEdit(event)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="btn btn-danger btn-sm"
+                        disabled={busyId === event.id}
+                        onClick={() => handleDelete(event)}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
                 </td>
               </tr>
             ))}

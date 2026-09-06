@@ -157,6 +157,8 @@ export const orgApi = {
     asUser(`/organizations/${orgId}/events`, { method: 'POST', body: JSON.stringify(payload) }),
   deleteEvent: (orgId, eventId) =>
     asUser(`/organizations/${orgId}/events/${eventId}`, { method: 'DELETE' }),
+  updateEvent: (orgId, eventId, payload) =>
+    asUser(`/organizations/${orgId}/events/${eventId}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   updateEventRetention: (orgId, eventId, retentionDays) =>
     asUser(`/organizations/${orgId}/events/${eventId}/retention`, {
       method: 'PATCH',
