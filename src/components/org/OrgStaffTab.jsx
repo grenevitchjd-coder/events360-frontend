@@ -13,10 +13,14 @@ export default function OrgStaffTab({ onToast }) {
   const [assignments, setAssignments] = useState(null)
   const [busyId, setBusyId] = useState(null)
 
-  const [userForm, setUserForm] = useState({ name: '', email: '', password: '', role: 'staff' })
+  const [userForm, setUserForm] = useState({ name: '', email: '', role: 'staff' })
+  // { [appCategory]: { role_id, event_id } } — one optional role per app at
+  // creation time; more can be stacked later via Assign roles below.
+  const [createPicks, setCreatePicks] = useState({})
   const [creatingUser, setCreatingUser] = useState(false)
 
-  const [assignForm, setAssignForm] = useState({ user_id: '', role_id: '', event_id: '' })
+  const [assignUserId, setAssignUserId] = useState('')
+  const [assignPicks, setAssignPicks] = useState({})
   const [creatingAssignment, setCreatingAssignment] = useState(false)
 
   const loadAll = () => {
@@ -37,13 +41,54 @@ export default function OrgStaffTab({ onToast }) {
 
   useEffect(loadAll, [orgId])
 
+  // Apps derived from each role's permission categories (same source that
+  // drives the sidebar's per-app role pages): "Events360" renders as
+  // "Org role", every other category as "<App> role" — a future app's
+  // roles grow a row here with zero code changes. A hybrid role appears
+  // under every app it touches.
+  const roleApps = (role) => [...new Set((role.permissions || []).map((p) => p.category))]
+  const apps = [...new Set((roles || []).flatMap(roleApps))].sort((a, b) =>
+    a === 'Events360' ? -1 : b === 'Events360' ? 1 : a.localeCompare(b)
+  )
+  const appRoleLabel = (app) => (app === 'Events360' ? 'Org role' : `${app} role`)
+  const rolesForApp = (app) => (roles || []).filter((r) => roleApps(r).includes(app))
+
+  const setPick = (setter) => (app, field, value) =>
+    setter((prev) => ({ ...prev, [app]: { role_id: '', event_id: '', ...prev[app], [field]: value } }))
+
+  // One assignment per picked app row; report each failure honestly.
+  const createPickedAssignments = async (userId, picks) => {
+    const chosen = Object.entries(picks).filter(([, p]) => p.role_id)
+    let ok = 0
+    for (const [app, p] of chosen) {
+      try {
+        await orgApi.createStaffAssignment(orgId, {
+          user_id: userId,
+          role_id: p.role_id,
+          event_id: p.event_id || null,
+        })
+        ok += 1
+      } catch (err) {
+        onToast(`${appRoleLabel(app)} could not be assigned: ${err.message}`, true)
+      }
+    }
+    return { ok, chosen: chosen.length }
+  }
+
   const handleCreateUser = async (e) => {
     e.preventDefault()
     setCreatingUser(true)
     try {
-      await orgApi.createUser(orgId, userForm)
+      const created = await orgApi.createUser(orgId, userForm)
+      const { ok, chosen } = await createPickedAssignments(created.id, createPicks)
+      onToast(
+        chosen > 0
+          ? `${created.name} added with ${ok}/${chosen} role${chosen === 1 ? '' : 's'} — invite email sent so they can set their password`
+          : `${created.name} added — invite email sent so they can set their password`
+      )
+      setCreatePicks({})
       onToast(`${userForm.name} added`)
-      setUserForm({ name: '', email: '', password: '', role: 'staff' })
+      setUserForm({ name: '', email: '', role: 'staff' })
       loadAll()
     } catch (err) {
       onToast(err.message, true)
@@ -109,22 +154,63 @@ export default function OrgStaffTab({ onToast }) {
 
   const handleCreateAssignment = async (e) => {
     e.preventDefault()
+    const anyPicked = Object.values(assignPicks).some((p) => p.role_id)
+    if (!assignUserId || !anyPicked) {
+      onToast('Pick a person and at least one role.', true)
+      return
+    }
     setCreatingAssignment(true)
     try {
-      await orgApi.createStaffAssignment(orgId, {
-        user_id: assignForm.user_id,
-        role_id: assignForm.role_id,
-        event_id: assignForm.event_id || null,
-      })
-      onToast('Assignment created')
-      setAssignForm({ user_id: '', role_id: '', event_id: '' })
+      const { ok, chosen } = await createPickedAssignments(assignUserId, assignPicks)
+      if (ok > 0) onToast(`${ok}/${chosen} role${chosen === 1 ? '' : 's'} assigned`)
+      setAssignUserId('')
+      setAssignPicks({})
       loadAll()
-    } catch (err) {
-      onToast(err.message, true)
     } finally {
       setCreatingAssignment(false)
     }
   }
+
+  // One row per app: "<App> role" dropdown + its scope. Used by both the
+  // Add-a-person form and Assign roles below.
+  const renderAppPicks = (picks, setPicks, idPrefix) =>
+    apps.map((appName) => (
+      <div key={appName} style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+        <div className="field">
+          <label htmlFor={`${idPrefix}-${appName}-role`}>{appRoleLabel(appName)}</label>
+          <select
+            id={`${idPrefix}-${appName}-role`}
+            value={picks[appName]?.role_id || ''}
+            onChange={(e) => setPick(setPicks)(appName, 'role_id', e.target.value)}
+            style={selectStyle}
+          >
+            <option value="">— none —</option>
+            {rolesForApp(appName).map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor={`${idPrefix}-${appName}-scope`}>Scope</label>
+          <select
+            id={`${idPrefix}-${appName}-scope`}
+            value={picks[appName]?.event_id || ''}
+            onChange={(e) => setPick(setPicks)(appName, 'event_id', e.target.value)}
+            disabled={!picks[appName]?.role_id}
+            style={selectStyle}
+          >
+            <option value="">Org-wide</option>
+            {(events || []).map((ev) => (
+              <option key={ev.id} value={ev.id}>
+                {ev.name} only
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+    ))
 
   const handleRemoveAssignment = (assignment) => {
     setBusyId(assignment.id)
@@ -181,16 +267,6 @@ export default function OrgStaffTab({ onToast }) {
             />
           </div>
           <div className="field">
-            <label htmlFor="u-password">Password</label>
-            <input
-              id="u-password"
-              type="password"
-              required
-              value={userForm.password}
-              onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
-            />
-          </div>
-          <div className="field">
             <label htmlFor="u-role">Role</label>
             <select
               id="u-role"
@@ -202,10 +278,15 @@ export default function OrgStaffTab({ onToast }) {
               {isOwner && <option value="org_admin">Org admin</option>}
             </select>
           </div>
+          {renderAppPicks(createPicks, setCreatePicks, 'u')}
           <button className="btn btn-secondary" type="submit" disabled={creatingUser}>
             Add person
           </button>
         </form>
+        <p className="page-subtitle" style={{ marginTop: 8, marginBottom: 0 }}>
+          No password to type: they&apos;ll get an invite email with a link to set their own.
+          Roles are optional here — you can stack more anytime below.
+        </p>
       </div>
 
       <table className="data-table" style={{ marginBottom: 28 }}>
@@ -269,15 +350,14 @@ export default function OrgStaffTab({ onToast }) {
       </table>
 
       <div className="panel">
-        <div className="panel-title">Assign a role</div>
+        <div className="panel-title">Assign roles</div>
         <form className="inline-form" onSubmit={handleCreateAssignment}>
           <div className="field">
             <label htmlFor="a-user">Person</label>
             <select
               id="a-user"
-              required
-              value={assignForm.user_id}
-              onChange={(e) => setAssignForm({ ...assignForm, user_id: e.target.value })}
+              value={assignUserId}
+              onChange={(e) => setAssignUserId(e.target.value)}
               style={selectStyle}
             >
               <option value="" disabled>
@@ -290,41 +370,7 @@ export default function OrgStaffTab({ onToast }) {
               ))}
             </select>
           </div>
-          <div className="field">
-            <label htmlFor="a-role">Role</label>
-            <select
-              id="a-role"
-              required
-              value={assignForm.role_id}
-              onChange={(e) => setAssignForm({ ...assignForm, role_id: e.target.value })}
-              style={selectStyle}
-            >
-              <option value="" disabled>
-                Choose…
-              </option>
-              {roles.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="a-event">Scope</label>
-            <select
-              id="a-event"
-              value={assignForm.event_id}
-              onChange={(e) => setAssignForm({ ...assignForm, event_id: e.target.value })}
-              style={selectStyle}
-            >
-              <option value="">Org-wide</option>
-              {events.map((ev) => (
-                <option key={ev.id} value={ev.id}>
-                  {ev.name} only
-                </option>
-              ))}
-            </select>
-          </div>
+          {renderAppPicks(assignPicks, setAssignPicks, 'a')}
           <button className="btn btn-secondary" type="submit" disabled={creatingAssignment}>
             Assign
           </button>
