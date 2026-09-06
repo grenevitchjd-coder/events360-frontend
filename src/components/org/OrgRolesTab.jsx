@@ -1,13 +1,96 @@
+// events360-frontend/src/components/org/OrgRolesTab.jsx
 import { useEffect, useMemo, useState } from 'react'
 import { orgApi, getCurrentOrgUserClaims } from '../../api'
 
-function groupByCategory(catalog) {
-  const groups = {}
+// Human names for the areas encoded in permission keys ("<app>.<area>.<action>").
+const AREA_LABELS = {
+  setup: 'Event setup',
+  guests: 'Guests (Invites & Allotments)',
+  guest_list: 'Guest list',
+  promotion: 'Promotion',
+  money: 'Money',
+  checkin: 'Check-in',
+}
+
+// Starter roles: clicking one prefills the builder (name + permissions) so
+// the admin can see exactly what it grants, tweak it, and save. Manage keys
+// bring their view keys along, matching the manage-implies-view rule.
+const TEMPLATES = [
+  {
+    name: 'Door staff',
+    blurb: 'Check people in and see the roster. Nothing else.',
+    keys: ['eventnxt.checkin', 'eventnxt.guest_list.view'],
+  },
+  {
+    name: 'Guest manager',
+    blurb: 'Runs invites, allotments, and the guest list. Sees setup, no money.',
+    keys: [
+      'eventnxt.guests.manage', 'eventnxt.guests.view',
+      'eventnxt.guest_list.manage', 'eventnxt.guest_list.view',
+      'eventnxt.setup.view', 'eventnxt.checkin',
+    ],
+  },
+  {
+    name: 'Promoter',
+    blurb: 'Creates promo codes and referral deals. No sales figures.',
+    keys: ['eventnxt.promotion.manage', 'eventnxt.promotion.view'],
+  },
+  {
+    name: 'Finance',
+    blurb: 'Full money access — refunds, payouts, reserve — plus view of everything.',
+    keys: [
+      'eventnxt.money.manage', 'eventnxt.money.view',
+      'eventnxt.setup.view', 'eventnxt.guests.view',
+      'eventnxt.guest_list.view', 'eventnxt.promotion.view',
+    ],
+  },
+  {
+    name: 'Event coordinator',
+    blurb: 'Runs everything except acting on money (can see the numbers).',
+    keys: [
+      'eventnxt.setup.manage', 'eventnxt.setup.view',
+      'eventnxt.guests.manage', 'eventnxt.guests.view',
+      'eventnxt.guest_list.manage', 'eventnxt.guest_list.view',
+      'eventnxt.promotion.manage', 'eventnxt.promotion.view',
+      'eventnxt.money.view', 'eventnxt.checkin',
+    ],
+  },
+]
+
+// Parse the flat catalog into: app -> [ { area, label, view?, manage?, single? } ]
+function structureCatalog(catalog) {
+  const apps = {}
   for (const perm of catalog) {
-    if (!groups[perm.category]) groups[perm.category] = []
-    groups[perm.category].push(perm)
+    const parts = perm.key.split('.')
+    const app = perm.category
+    if (!apps[app]) apps[app] = {}
+    const areaKey = parts.length >= 2 ? parts[1] : perm.key
+    if (!apps[app][areaKey]) {
+      apps[app][areaKey] = { area: areaKey, label: AREA_LABELS[areaKey] || areaKey }
+    }
+    const action = parts.length >= 3 ? parts[2] : 'single'
+    apps[app][areaKey][action] = perm
   }
-  return groups
+  return Object.fromEntries(
+    Object.entries(apps).map(([app, areas]) => [app, Object.values(areas)])
+  )
+}
+
+// Compact human summary of a role's grants: "Guests: manage · Check-in"
+function summarize(role) {
+  const byArea = {}
+  for (const p of role.permissions) {
+    const parts = p.key.split('.')
+    const area = parts.length >= 2 ? parts[1] : p.key
+    const action = parts.length >= 3 ? parts[2] : 'yes'
+    if (action === 'manage' || !byArea[area]) byArea[area] = action
+  }
+  return Object.entries(byArea)
+    .map(([area, action]) => {
+      const label = AREA_LABELS[area] || area
+      return action === 'yes' ? label : `${label}: ${action}`
+    })
+    .join(' · ')
 }
 
 export default function OrgRolesTab({ onToast }) {
@@ -16,7 +99,9 @@ export default function OrgRolesTab({ onToast }) {
   const [catalog, setCatalog] = useState(null)
   const [name, setName] = useState('')
   const [selectedKeys, setSelectedKeys] = useState(new Set())
-  const [creating, setCreating] = useState(false)
+  const [editingRoleId, setEditingRoleId] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [busyId, setBusyId] = useState(null)
 
   const load = () => {
     orgApi
@@ -33,106 +118,237 @@ export default function OrgRolesTab({ onToast }) {
       .catch((e) => onToast(e.message, true))
   }, [orgId])
 
-  const groupedCatalog = useMemo(() => (catalog ? groupByCategory(catalog) : {}), [catalog])
+  const structured = useMemo(() => (catalog ? structureCatalog(catalog) : {}), [catalog])
 
-  const togglePermission = (key) => {
+  const setChecked = (key, on) => {
     setSelectedKeys((prev) => {
       const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
+      if (on) next.add(key)
+      else next.delete(key)
       return next
     })
   }
 
-  const handleCreate = async (e) => {
+  // Manage implies view: turning manage on brings view with it; while manage
+  // is on, the view box is locked on (no "can edit but not see" roles).
+  const toggleManage = (row) => {
+    const on = !selectedKeys.has(row.manage.key)
+    setSelectedKeys((prev) => {
+      const next = new Set(prev)
+      if (on) {
+        next.add(row.manage.key)
+        if (row.view) next.add(row.view.key)
+      } else {
+        next.delete(row.manage.key)
+      }
+      return next
+    })
+  }
+
+  const applyTemplate = (template) => {
+    setEditingRoleId(null)
+    setName(template.name)
+    setSelectedKeys(new Set(template.keys))
+  }
+
+  const startEdit = (role) => {
+    setEditingRoleId(role.id)
+    setName(role.name)
+    setSelectedKeys(new Set(role.permissions.map((p) => p.key)))
+  }
+
+  const resetBuilder = () => {
+    setEditingRoleId(null)
+    setName('')
+    setSelectedKeys(new Set())
+  }
+
+  const handleSubmit = async (e) => {
     e.preventDefault()
     if (selectedKeys.size === 0) {
       onToast('Pick at least one permission for this role.', true)
       return
     }
-    setCreating(true)
+    setSaving(true)
     try {
-      await orgApi.createRole(orgId, { name, permission_keys: Array.from(selectedKeys) })
-      onToast(`Role "${name}" created`)
-      setName('')
-      setSelectedKeys(new Set())
+      const payload = { name, permission_keys: Array.from(selectedKeys) }
+      if (editingRoleId) {
+        await orgApi.updateRole(orgId, editingRoleId, payload)
+        onToast(`Role "${name}" updated — everyone assigned it has the new access now`)
+      } else {
+        await orgApi.createRole(orgId, payload)
+        onToast(`Role "${name}" created`)
+      }
+      resetBuilder()
       load()
     } catch (err) {
       onToast(err.message, true)
     } finally {
-      setCreating(false)
+      setSaving(false)
     }
+  }
+
+  const handleDelete = (role) => {
+    if (!window.confirm(`Delete the role "${role.name}"?`)) return
+    setBusyId(role.id)
+    orgApi
+      .deleteRole(orgId, role.id)
+      .then(() => {
+        onToast(`Role "${role.name}" deleted`)
+        if (editingRoleId === role.id) resetBuilder()
+        load()
+      })
+      .catch((e) => onToast(e.message, true))
+      .finally(() => setBusyId(null))
   }
 
   if (roles === null || catalog === null) return null
 
+  const checkboxStyle = { display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }
+
   return (
     <>
       <div className="page-title">Roles</div>
-      <p className="page-subtitle">Build custom roles by combining permissions, then assign them to staff.</p>
+      <p className="page-subtitle">
+        A role is a bundle of access you assign to staff on the Staff tab — org-wide or for one
+        event. Owners and org admins always have full access; roles only apply to staff.
+      </p>
 
       <div className="panel">
-        <div className="panel-title">Create a role</div>
-        <form onSubmit={handleCreate}>
+        <div className="panel-title">Start from a template</div>
+        <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 0 }}>
+          Picking one fills in the builder below so you can see and adjust exactly what it grants
+          before saving.
+        </p>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {TEMPLATES.map((t) => (
+            <button
+              key={t.name}
+              type="button"
+              className="btn btn-secondary btn-sm"
+              title={t.blurb}
+              onClick={() => applyTemplate(t)}
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-title">{editingRoleId ? `Edit role` : 'Build a role'}</div>
+        <form onSubmit={handleSubmit}>
           <div className="field" style={{ maxWidth: 320 }}>
             <label htmlFor="role-name">Role name</label>
             <input id="role-name" required value={name} onChange={(e) => setName(e.target.value)} />
           </div>
 
-          <div className="field">
-            <label>Permissions</label>
-            <div className="permission-groups">
-              {Object.entries(groupedCatalog).map(([category, perms]) => (
-                <div key={category}>
-                  <div className="permission-group-title">{category}</div>
-                  <div className="permission-list">
-                    {perms.map((perm) => (
-                      <label key={perm.key} className="permission-item">
-                        <input
-                          type="checkbox"
-                          checked={selectedKeys.has(perm.key)}
-                          onChange={() => togglePermission(perm.key)}
-                        />
-                        <span className="permission-item-text">
-                          <span className="permission-item-key">{perm.key}</span>
-                          <span className="permission-item-desc">{perm.description}</span>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ))}
+          {Object.entries(structured).map(([app, rows]) => (
+            <div key={app} style={{ marginTop: 12 }}>
+              <div className="permission-group-title">{app}</div>
+              <table className="data-table" style={{ marginBottom: 0 }}>
+                <thead>
+                  <tr>
+                    <th>Area</th>
+                    <th style={{ width: 90 }}>View</th>
+                    <th style={{ width: 90 }}>Manage</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.area}>
+                      <td>
+                        <div>{row.label}</div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                          {(row.view || row.single)?.description}
+                        </div>
+                      </td>
+                      {row.single ? (
+                        <td colSpan={2}>
+                          <label style={checkboxStyle}>
+                            <input
+                              type="checkbox"
+                              aria-label={`${row.label} allowed`}
+                              checked={selectedKeys.has(row.single.key)}
+                              onChange={(e) => setChecked(row.single.key, e.target.checked)}
+                            />
+                            Allowed
+                          </label>
+                        </td>
+                      ) : (
+                        <>
+                          <td>
+                            <input
+                              type="checkbox"
+                              aria-label={`${row.label} view`}
+                              checked={selectedKeys.has(row.view.key)}
+                              disabled={selectedKeys.has(row.manage.key)}
+                              onChange={(e) => setChecked(row.view.key, e.target.checked)}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="checkbox"
+                              aria-label={`${row.label} manage`}
+                              checked={selectedKeys.has(row.manage.key)}
+                              onChange={() => toggleManage(row)}
+                            />
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </div>
+          ))}
 
-          <button className="btn btn-secondary" type="submit" disabled={creating} style={{ marginTop: 20 }}>
-            Create role
-          </button>
+          <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+            <button className="btn btn-secondary" type="submit" disabled={saving}>
+              {editingRoleId ? 'Save changes' : 'Create role'}
+            </button>
+            {editingRoleId && (
+              <button className="btn btn-secondary" type="button" onClick={resetBuilder}>
+                Cancel
+              </button>
+            )}
+          </div>
         </form>
       </div>
 
       {roles.length === 0 ? (
         <div className="data-table">
-          <div className="empty-state">No custom roles yet — create one above.</div>
+          <div className="empty-state">No roles yet — start from a template above.</div>
         </div>
       ) : (
         <table className="data-table">
           <thead>
             <tr>
               <th>Role</th>
-              <th>Permissions</th>
+              <th>Access</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {roles.map((role) => (
               <tr key={role.id}>
                 <td>{role.name}</td>
-                <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {role.permissions.map((p) => (
-                    <span key={p.id} className="mono" style={{ fontSize: 12 }}>
-                      {p.key}
-                    </span>
-                  ))}
+                <td style={{ fontSize: 13 }}>{summarize(role) || '—'}</td>
+                <td className="actions-cell">
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    disabled={busyId === role.id}
+                    onClick={() => startEdit(role)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="btn btn-danger btn-sm"
+                    disabled={busyId === role.id}
+                    onClick={() => handleDelete(role)}
+                  >
+                    Delete
+                  </button>
                 </td>
               </tr>
             ))}

@@ -170,6 +170,10 @@ export const orgApi = {
   listRoles: (orgId) => asUser(`/organizations/${orgId}/roles`),
   createRole: (orgId, payload) =>
     asUser(`/organizations/${orgId}/roles`, { method: 'POST', body: JSON.stringify(payload) }),
+  updateRole: (orgId, roleId, payload) =>
+    asUser(`/organizations/${orgId}/roles/${roleId}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deleteRole: (orgId, roleId) =>
+    asUser(`/organizations/${orgId}/roles/${roleId}`, { method: 'DELETE' }),
 
   // People
   listUsers: (orgId) => asUser(`/organizations/${orgId}/users`),
