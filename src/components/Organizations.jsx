@@ -52,171 +52,6 @@ function ProductsPanel({ org, onToast }) {
   )
 }
 
-function PeoplePanel({ org, onToast }) {
-  const [users, setUsers] = useState(null)
-  const [busyId, setBusyId] = useState(null)
-
-  const load = () => {
-    api
-      .listOrgUsers(org.id)
-      .then(setUsers)
-      .catch((e) => onToast(e.message, true))
-  }
-
-  useEffect(load, [org.id])
-
-  const sendReset = async (user) => {
-    setBusyId(user.id)
-    try {
-      const res = await api.sendOrgUserReset(org.id, user.id)
-      onToast(res.detail)
-    } catch (e) {
-      onToast(e.message, true)
-    } finally {
-      setBusyId(null)
-    }
-  }
-
-  if (users === null) return <div className="events-panel-empty">Loading people…</div>
-
-  if (users.length === 0) {
-    return <div className="events-panel-empty">No people in this organization yet.</div>
-  }
-
-  return (
-    <table className="sub-table" style={{ marginBottom: 16 }}>
-      <thead>
-        <tr>
-          <th>Person</th>
-          <th>Email</th>
-          <th>Role</th>
-          <th>Status</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {users.map((user) => (
-          <tr key={user.id}>
-            <td>{user.name}</td>
-            <td className="mono">{user.email}</td>
-            <td className="mono">{user.role}</td>
-            <td>
-              <StatusPill status={user.status} />
-            </td>
-            <td className="actions-cell">
-              <button
-                className="btn btn-secondary btn-sm"
-                disabled={busyId === user.id}
-                onClick={() => sendReset(user)}
-              >
-                Send reset link
-              </button>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
-}
-
-function EventsPanel({ org, onToast }) {
-  const [events, setEvents] = useState(null)
-  const [busyId, setBusyId] = useState(null)
-
-  const load = () => {
-    api
-      .listOrgEvents(org.id)
-      .then(setEvents)
-      .catch((e) => onToast(e.message, true))
-  }
-
-  useEffect(load, [org.id])
-
-  const run = async (event, action, label) => {
-    setBusyId(event.id)
-    try {
-      await action()
-      onToast(`${event.name} ${label}`)
-      load()
-    } catch (e) {
-      onToast(e.message, true)
-    } finally {
-      setBusyId(null)
-    }
-  }
-
-  const handleDelete = (event) => {
-    if (!window.confirm(`Delete event "${event.name}"? This can't be undone.`)) return
-    run(event, () => api.deleteEvent(org.id, event.id), 'deleted')
-  }
-
-  if (events === null) return <div className="events-panel-empty">Loading events…</div>
-
-  if (events.length === 0) {
-    return <div className="events-panel-empty">No events under this organization yet.</div>
-  }
-
-  return (
-    <table className="sub-table">
-      <thead>
-        <tr>
-          <th>Event</th>
-          <th>Date</th>
-          <th>Retention</th>
-          <th>Status</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {events.map((event) => (
-          <tr key={event.id}>
-            <td>{event.name}</td>
-            <td className="mono">
-              {event.start_date
-                ? new Date(event.start_date).toLocaleDateString() +
-                  (event.end_date && event.end_date !== event.start_date
-                    ? ` - ${new Date(event.end_date).toLocaleDateString()}`
-                    : '')
-                : '-'}
-            </td>
-            <td className="mono">{event.retention_days}d</td>
-            <td>
-              <StatusPill status={event.status} />
-            </td>
-            <td className="actions-cell">
-              {event.status === 'active' && (
-                <button
-                  className="btn btn-secondary btn-sm"
-                  disabled={busyId === event.id}
-                  onClick={() => run(event, () => api.lockEvent(org.id, event.id), 'locked')}
-                >
-                  Lock
-                </button>
-              )}
-              {event.status === 'locked' && (
-                <button
-                  className="btn btn-secondary btn-sm"
-                  disabled={busyId === event.id}
-                  onClick={() => run(event, () => api.unlockEvent(org.id, event.id), 'unlocked')}
-                >
-                  Unlock
-                </button>
-              )}
-              <button
-                className="btn btn-danger btn-sm"
-                disabled={busyId === event.id}
-                onClick={() => handleDelete(event)}
-              >
-                Delete
-              </button>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
-}
-
 export default function Organizations({ onToast }) {
   const [orgs, setOrgs] = useState(null)
   const [busyId, setBusyId] = useState(null)
@@ -279,7 +114,7 @@ export default function Organizations({ onToast }) {
         <div>
           <div className="page-title">Organizations</div>
           <p className="page-subtitle" style={{ marginBottom: 0 }}>
-            Every organization on the platform. Click a row to see its people and events.
+            Every organization on the platform. Click a row to manage which apps it can use.
           </p>
         </div>
         <input
@@ -358,31 +193,18 @@ export default function Organizations({ onToast }) {
                     <tr className="events-panel-row">
                       <td colSpan={6}>
                         <div className="events-panel">
+                          <div
+                            style={{
+                              color: 'var(--text-muted)',
+                              fontSize: 12,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.06em',
+                              marginBottom: 6,
+                            }}
+                          >
+                            Apps
+                          </div>
                           <ProductsPanel org={org} onToast={onToast} />
-                          <div
-                            style={{
-                              color: 'var(--text-muted)',
-                              fontSize: 12,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.06em',
-                              marginBottom: 6,
-                            }}
-                          >
-                            People
-                          </div>
-                          <PeoplePanel org={org} onToast={onToast} />
-                          <div
-                            style={{
-                              color: 'var(--text-muted)',
-                              fontSize: 12,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.06em',
-                              marginBottom: 6,
-                            }}
-                          >
-                            Events
-                          </div>
-                          <EventsPanel org={org} onToast={onToast} />
                         </div>
                       </td>
                     </tr>

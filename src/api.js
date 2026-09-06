@@ -114,7 +114,8 @@ export const api = {
   deleteEvent: (orgId, eventId) =>
     request(`/admin/organizations/${orgId}/events/${eventId}`, { method: 'DELETE' }),
 
-  listOrgUsers: (orgId) => request(`/admin/organizations/${orgId}/users`),
+  listAllEvents: () => request('/admin/events'),
+  listOrgAdmins: () => request('/admin/org-admins'),
   sendOrgUserReset: (orgId, userId) =>
     request(`/admin/organizations/${orgId}/users/${userId}/send-password-reset`, { method: 'POST' }),
 

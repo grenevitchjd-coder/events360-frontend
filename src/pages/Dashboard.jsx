@@ -1,13 +1,18 @@
+// events360-frontend/src/pages/Dashboard.jsx
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { clearToken, getCurrentAdminClaims } from '../api'
 import PendingApprovals from '../components/PendingApprovals'
 import Organizations from '../components/Organizations'
+import AdminEventsTab from '../components/AdminEventsTab'
+import AdminPeopleTab from '../components/AdminPeopleTab'
 import PlatformAdmins from '../components/PlatformAdmins'
 
 const TABS = [
   { key: 'pending', label: 'Pending approvals' },
   { key: 'organizations', label: 'Organizations' },
+  { key: 'events', label: 'Events' },
+  { key: 'people', label: 'People' },
   { key: 'admins', label: 'Platform admins' },
 ]
 
@@ -57,6 +62,8 @@ export default function Dashboard() {
       <main className="main">
         {tab === 'pending' && <PendingApprovals onToast={showToast} />}
         {tab === 'organizations' && <Organizations onToast={showToast} />}
+        {tab === 'events' && <AdminEventsTab onToast={showToast} />}
+        {tab === 'people' && <AdminPeopleTab onToast={showToast} />}
         {tab === 'admins' && <PlatformAdmins onToast={showToast} />}
       </main>
 
